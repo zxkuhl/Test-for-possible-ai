@@ -1,69 +1,65 @@
-// =====================
-// AI MEMORY
-// =====================
 const memory = {
   name: "ZX-AI",
-  mood: "neutral",
-  context: null,
   history: []
 };
 
-// =====================
-// INTENT PARSER
-// =====================
 function parseIntent(input) {
   input = input.toLowerCase();
 
   if (input.includes("help")) return "help";
-  if (input.includes("code") || input.includes("script")) return "code";
-  if (input.includes("discord")) return "discord";
+  if (input.includes("code")) return "code";
   if (input.includes("who are you")) return "identity";
-  if (input.includes("set mode")) return "mode";
-  if (input.includes("remember")) return "memory";
-
   return "unknown";
 }
 
-// =====================
-// AI DECISION ENGINE
-// =====================
 function think(input) {
   const intent = parseIntent(input);
-
   memory.history.push({ input, intent });
 
-  switch (intent) {
-    case "help":
-      return "I can assist with code, logic, systems, and structured thinking.";
-
-    case "code":
-      memory.context = "coding";
-      return "Code mode enabled. Tell me the language or goal.";
-
-    case "discord":
-      return "Discord systems detected. Bots, webhooks, moderation, or servers?";
-
-    case "identity":
-      return `I am ${memory.name}. A local logic-based AI. No APIs. No limits.`;
-
-    case "memory":
-      return "Short-term memory active. I can track context during this session.";
-
-    case "mode":
-      memory.mood = "focused";
-      return "Mode switched to focused.";
-
-    default:
-      return "Input not recognized. Rephrase or give a clearer command.";
-  }
+  if (intent === "help") return "I assist with logic, systems, and structured thinking.";
+  if (intent === "code") return "Code mode enabled. Specify language or goal.";
+  if (intent === "identity") return "I am ZX-AI. A local symbolic intelligence.";
+  return "Unrecognized input. Clarify intent.";
 }
 
-// =====================
-// OUTPUT HANDLER
-// =====================
-function respond() {
-  const input = document.getElementById("userInput").value;
-  const output = think(input);
+function addMessage(text, type) {
+  const chat = document.getElementById("chat");
+  const msg = document.createElement("div");
+  msg.className = `message ${type}`;
+  msg.innerText = text;
+  chat.appendChild(msg);
+  chat.scrollTop = chat.scrollHeight;
+}
 
-  document.getElementById("output").innerText = output;
+function typeAI(text) {
+  const chat = document.getElementById("chat");
+  const msg = document.createElement("div");
+  msg.className = "message ai";
+  chat.appendChild(msg);
+
+  let i = 0;
+  const typing = setInterval(() => {
+    msg.innerText += text[i];
+    i++;
+    if (i >= text.length) clearInterval(typing);
+    chat.scrollTop = chat.scrollHeight;
+  }, 20);
+}
+
+function respond() {
+  const inputBox = document.getElementById("userInput");
+  const input = inputBox.value.trim();
+  if (!input) return;
+
+  addMessage(input, "user");
+  inputBox.value = "";
+
+  const thinking = document.getElementById("thinking");
+  thinking.style.display = "block";
+
+  setTimeout(() => {
+    thinking.style.display = "none";
+    const output = think(input);
+    typeAI(output);
+  }, 500);
 }
