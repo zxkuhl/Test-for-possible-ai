@@ -10,34 +10,17 @@
 <body>
 
 <div id="ai-container">
-  <h1>ZX-AI</h1>
-
   <div id="chat"></div>
 
-  <div id="thinking">ZX-AI is thinking...</div>
+  <div id="thinking" style="display: none;">
+    ZX-AI is thinking<span class="typing-dots"><span></span><span></span><span></span></span>
+  </div>
 
-  <input id="userInput" placeholder="Enter command..." />
-  <button onclick="respond()">Send</button>
+  <div id="input-area">
+    <input id="userInput" placeholder="Type your message..." />
+    <button onclick="respond()">Send</button>
+  </div>
 </div>
-
-<script>
-  // Fix for spacing in AI responses
-  function addMessage(sender, text) {
-    const chat = document.getElementById('chat');
-    const message = document.createElement('div');
-    message.className = sender;
-    
-    // Add proper spacing and formatting
-    const formattedText = text
-      .replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space between camelCase
-      .replace(/([.!?])\s*([A-Z])/g, '$1 $2')  // Space after punctuation
-      .trim();
-    
-    message.textContent = formattedText;
-    chat.appendChild(message);
-    chat.scrollTop = chat.scrollHeight;
-  }
-</script>
 
 </body>
 </html>
