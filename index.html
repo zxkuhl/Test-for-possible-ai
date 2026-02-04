@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ZX AI</title>
   <link rel="stylesheet" href="style.css">
   <script src="brain.js" defer></script>
@@ -18,6 +19,25 @@
   <input id="userInput" placeholder="Enter command..." />
   <button onclick="respond()">Send</button>
 </div>
+
+<script>
+  // Fix for spacing in AI responses
+  function addMessage(sender, text) {
+    const chat = document.getElementById('chat');
+    const message = document.createElement('div');
+    message.className = sender;
+    
+    // Add proper spacing and formatting
+    const formattedText = text
+      .replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space between camelCase
+      .replace(/([.!?])\s*([A-Z])/g, '$1 $2')  // Space after punctuation
+      .trim();
+    
+    message.textContent = formattedText;
+    chat.appendChild(message);
+    chat.scrollTop = chat.scrollHeight;
+  }
+</script>
 
 </body>
 </html>
