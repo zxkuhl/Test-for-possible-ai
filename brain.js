@@ -67,30 +67,74 @@ if (mightBeSpecialized && !unknownTerms.includes(word)) {
 return unknownTerms;
 }
 
-// NEW: Search web for term meaning
+// NEW: Search dictionary API for term meaning
 async function searchTermMeaning(term) {
 try {
-// In a real implementation, this would call an actual search API
-// For now, we’ll simulate it and provide a framework
-console.log(`Searching for: "${term} meaning"`);
+console.log(`Searching for: "${term}"`);
 
 ```
-// Add the term to known terms so we don't search again
+// Call the dictionary API
+const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(term)}`);
+
+if (!response.ok) {
+  console.log(`Term "${term}" not found in dictionary`);
+  memory.knownTerms.add(term.toLowerCase());
+  return {
+    term: term,
+    searched: true,
+    found: false,
+    definition: null
+  };
+}
+
+const data = await response.json();
+
+// Extract the first definition
+let definition = null;
+let partOfSpeech = null;
+
+if (data && data.length > 0 && data[0].meanings && data[0].meanings.length > 0) {
+  const firstMeaning = data[0].meanings[0];
+  partOfSpeech = firstMeaning.partOfSpeech;
+  
+  if (firstMeaning.definitions && firstMeaning.definitions.length > 0) {
+    definition = firstMeaning.definitions[0].definition;
+  }
+}
+
+// Add the term to known terms
 memory.knownTerms.add(term.toLowerCase());
 
-// Return a placeholder response
-// In production, you'd integrate with a real search API here
+// Store the definition in memory for later reference
+if (!memory.context.learnedDefinitions) {
+  memory.context.learnedDefinitions = {};
+}
+memory.context.learnedDefinitions[term.toLowerCase()] = {
+  definition,
+  partOfSpeech,
+  timestamp: Date.now()
+};
+
+console.log(`Found definition for "${term}": ${definition}`);
+
 return {
   term: term,
   searched: true,
-  // You would populate this with actual search results
-  definition: null 
+  found: true,
+  definition: definition,
+  partOfSpeech: partOfSpeech
 };
 ```
 
 } catch (error) {
 console.error(‘Error searching for term:’, error);
-return { term, searched: false, definition: null };
+memory.knownTerms.add(term.toLowerCase());
+return {
+term,
+searched: false,
+found: false,
+definition: null
+};
 }
 }
 
@@ -308,11 +352,21 @@ let response = “”;
 if (intent === “definition_request”) {
 const term = handleDefinitionRequest(input);
 if (term) {
-await searchTermMeaning(term);
-response = `Let me search for the meaning of "${term}"... I've looked it up! In a full implementation, I would show you the definition here. For now, I'm learning about this term.`;
+const result = await searchTermMeaning(term);
+
+```
+  if (result.found && result.definition) {
+    response = `**${term}** (${result.partOfSpeech}): ${result.definition}`;
+  } else if (result.searched && !result.found) {
+    response = `I searched for "${term}" but couldn't find a definition in the dictionary. It might be a specialized term, slang, or misspelled. Can you provide more context?`;
+  } else {
+    response = `I had trouble searching for "${term}". Could you try rephrasing or checking the spelling?`;
+  }
 } else {
-response = “I’d be happy to define something for you! What term would you like me to explain?”;
+  response = "I'd be happy to define something for you! What term would you like me to explain?";
 }
+```
+
 }
 
 // Greetings
@@ -570,18 +624,36 @@ response = “I exist right here in your browser, running locally on your device
 
 // NEW: Enhanced unknown handling with term detection
 else {
-if (unknownTerms.length > 0) {
-const termList = unknownTerms.join(’, ‘);
-response = `I noticed some terms I'm not familiar with (${termList}). I've searched for their meanings to better understand you! Could you rephrase your question or tell me more about what you need?`;
+if (unknownTerms.length > 0 && termDefinitions.length > 0) {
+// Show definitions for terms we found
+const foundTerms = termDefinitions.filter(t => t.found);
+
+```
+  if (foundTerms.length > 0) {
+    let defText = "I found some new terms and looked them up:\n\n";
+    foundTerms.forEach(t => {
+      defText += `• **${t.term}** (${t.partOfSpeech}): ${t.definition}\n`;
+    });
+    defText += "\nNow I understand better! Could you rephrase your question?";
+    response = defText;
+  } else {
+    const termList = unknownTerms.join(', ');
+    response = `I noticed some terms I couldn't find in the dictionary (${termList}). They might be specialized jargon or acronyms. Could you explain what you mean or rephrase your question?`;
+  }
+} else if (unknownTerms.length > 0) {
+  const termList = unknownTerms.join(', ');
+  response = `I'm trying to understand some terms (${termList}), but I'm having trouble looking them up. Could you rephrase or provide more context?`;
 } else {
-const unknownResponses = [
-“Hmm, I’m not quite sure what you mean. Could you rephrase that or ask something else?”,
-“I didn’t quite catch that. Want to try asking in a different way?”,
-“Interesting! I’m not sure how to respond to that. Can you give me more details?”,
-“That’s a new one for me! Can you explain what you’re looking for?”
-];
-response = getVariedResponse(unknownResponses);
+  const unknownResponses = [
+    "Hmm, I'm not quite sure what you mean. Could you rephrase that or ask something else?",
+    "I didn't quite catch that. Want to try asking in a different way?",
+    "Interesting! I'm not sure how to respond to that. Can you give me more details?",
+    "That's a new one for me! Can you explain what you're looking for?"
+  ];
+  response = getVariedResponse(unknownResponses);
 }
+```
+
 }
 
 response = generateContextualResponse(intent, input, response);
