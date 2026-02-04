@@ -356,7 +356,7 @@ const result = await searchTermMeaning(term);
 
 ```
   if (result.found && result.definition) {
-    response = `**${term}** (${result.partOfSpeech}): ${result.definition}`;
+    response = `${term} (${result.partOfSpeech}): ${result.definition}`;
   } else if (result.searched && !result.found) {
     response = `I searched for "${term}" but couldn't find a definition in the dictionary. It might be a specialized term, slang, or misspelled. Can you provide more context?`;
   } else {
@@ -632,7 +632,7 @@ const foundTerms = termDefinitions.filter(t => t.found);
   if (foundTerms.length > 0) {
     let defText = "I found some new terms and looked them up:\n\n";
     foundTerms.forEach(t => {
-      defText += `• **${t.term}** (${t.partOfSpeech}): ${t.definition}\n`;
+      defText += `• ${t.term} (${t.partOfSpeech}): ${t.definition}\n`;
     });
     defText += "\nNow I understand better! Could you rephrase your question?";
     response = defText;
@@ -687,7 +687,8 @@ chat.scrollTop = chat.scrollHeight;
 }, 20);
 }
 
-async function respond() {
+// FIXED: Make respond() work properly with async
+function respond() {
 const inputBox = document.getElementById(“userInput”);
 const input = inputBox.value.trim();
 if (!input) return;
@@ -698,11 +699,16 @@ inputBox.value = “”;
 const thinking = document.getElementById(“thinking”);
 thinking.style.display = “block”;
 
-// Add small delay for thinking animation
-setTimeout(async () => {
+// Properly handle async think() function
+setTimeout(() => {
+think(input).then((output) => {
 thinking.style.display = “none”;
-const output = await think(input); // Now async to handle term searches
 typeAI(output);
+}).catch((error) => {
+thinking.style.display = “none”;
+console.error(‘Error:’, error);
+typeAI(“Sorry, I encountered an error. Please try again.”);
+});
 }, 500);
 }
 
