@@ -1,378 +1,119 @@
+-- ZX-AI Advanced Exploit Chatbot with Console Integration
+-- Supports multiple exploit environments
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Exploit environment detection
+local exploit_env = {
+    name = "Unknown",
+    console = nil,
+    print = print,
+    warn = warn,
+    error = error
+}
+
+-- Detect exploit environment
+if syn then
+    exploit_env.name = "Synapse X"
+    exploit_env.console = syn.write_clipboard or writefile
+elseif KRNL_LOADED then
+    exploit_env.name = "KRNL"
+elseif getexecutorname then
+    exploit_env.name = getexecutorname()
+elseif identifyexecutor then
+    exploit_env.name = identifyexecutor()
+end
+
+-- Console wrapper functions
+local function consoleprint(msg, color)
+    if rconsoleprint then
+        rconsoleprint(msg .. "\n")
+    elseif syn and syn.console_print then
+        syn.console_print(msg .. "\n")
+    else
+        print(msg)
+    end
+end
+
+local function consoleclear()
+    if rconsoleclear then
+        rconsoleclear()
+    elseif syn and syn.console_clear then
+        syn.console_clear()
+    end
+end
+
+local function consoleinfo(msg)
+    consoleprint("[INFO] " .. msg, "Cyan")
+end
+
+local function consolewarn(msg)
+    consoleprint("[WARN] " .. msg, "Yellow")
+    warn(msg)
+end
+
+local function consoleerror(msg)
+    consoleprint("[ERROR] " .. msg, "Red")
+    error(msg, 0)
+end
+
 -- Memory system
 local memory = {
     name = "ZX-AI",
     history = {},
     context = {},
+    userName = Players.LocalPlayer.Name,
     lastTopic = nil,
     conversationDepth = 0,
-    knownTerms = {} -- Track terms we've learned (using table as set)
+    userInterests = {},
+    emotionalState = nil,
+    conversationStyle = "neutral",
+    topicContext = {},
+    lastQuestionAsked = nil,
+    waitingForAnswer = false,
+    lastIntent = nil,
+    conversationFlow = {},
+    userMood = nil,
+    contextualMemory = {},
+    sentimentHistory = {},
+    engagementLevel = 0,
+    
+    -- Exploit-specific memory
+    executedScripts = {},
+    consoleLog = {},
+    commandHistory = {},
+    gameInfo = {
+        placeId = game.PlaceId,
+        jobId = game.JobId,
+        playerCount = #Players:GetPlayers()
+    }
 }
 
--- Common words set
-local commonWords = {
-    ['the'] = true, ['a'] = true, ['an'] = true, ['and'] = true, ['or'] = true, 
-    ['but'] = true, ['in'] = true, ['on'] = true, ['at'] = true, ['to'] = true, 
-    ['for'] = true, ['of'] = true, ['with'] = true, ['by'] = true, ['from'] = true, 
-    ['up'] = true, ['about'] = true, ['into'] = true, ['through'] = true, ['during'] = true,
-    ['is'] = true, ['are'] = true, ['was'] = true, ['were'] = true, ['be'] = true, 
-    ['been'] = true, ['being'] = true, ['have'] = true, ['has'] = true, ['had'] = true,
-    ['do'] = true, ['does'] = true, ['did'] = true, ['will'] = true, ['would'] = true, 
-    ['could'] = true, ['should'] = true, ['may'] = true, ['might'] = true,
-    ['can'] = true, ['what'] = true, ['when'] = true, ['where'] = true, ['who'] = true, 
-    ['why'] = true, ['how'] = true, ['which'] = true, ['this'] = true,
-    ['that'] = true, ['these'] = true, ['those'] = true, ['i'] = true, ['you'] = true, 
-    ['he'] = true, ['she'] = true, ['it'] = true, ['we'] = true, ['they'] = true,
-    ['my'] = true, ['your'] = true, ['his'] = true, ['her'] = true, ['its'] = true, 
-    ['our'] = true, ['their'] = true, ['me'] = true, ['him'] = true, ['us'] = true,
-    ['them'] = true, ['myself'] = true, ['yourself'] = true, ['himself'] = true, 
-    ['herself'] = true, ['itself'] = true, ['ourselves'] = true,
-    ['hi'] = true, ['hello'] = true, ['hey'] = true, ['thanks'] = true, ['please'] = true, 
-    ['yes'] = true, ['no'] = true, ['okay'] = true, ['ok'] = true
-}
-
--- Known specialized terms
-local knownSpecializedTerms = {
-    ['ai'] = true, ['code'] = true, ['programming'] = true, ['javascript'] = true, 
-    ['python'] = true, ['html'] = true, ['css'] = true,
-    ['computer'] = true, ['software'] = true, ['hardware'] = true, ['algorithm'] = true, 
-    ['data'] = true, ['function'] = true,
-    ['variable'] = true, ['array'] = true, ['object'] = true, ['class'] = true, 
-    ['method'] = true, ['api'] = true, ['database'] = true,
-    ['server'] = true, ['client'] = true, ['browser'] = true, ['website'] = true, 
-    ['app'] = true, ['application'] = true,
-    ['internet'] = true, ['email'] = true, ['password'] = true, ['login'] = true, 
-    ['user'] = true, ['file'] = true, ['folder'] = true,
-    ['weather'] = true, ['time'] = true, ['date'] = true, ['joke'] = true, ['story'] = true, 
-    ['game'] = true, ['music'] = true, ['song'] = true,
-    ['movie'] = true, ['book'] = true, ['food'] = true, ['restaurant'] = true, 
-    ['math'] = true, ['calculate'] = true, ['number'] = true
-}
-
--- Helper function to split string
-local function split(str, delimiter)
-    local result = {}
-    local pattern = string.format("([^%s]+)", delimiter or "%s")
-    for match in string.gmatch(str, pattern) do
-        table.insert(result, match)
-    end
-    return result
-end
-
--- Helper function to check if value is in table
-local function contains(tbl, value)
-    for _, v in ipairs(tbl) do
-        if v == value then
-            return true
-        end
+-- Helper functions
+local function tableContains(tbl, value)
+    for _, v in pairs(tbl) do
+        if v == value then return true end
     end
     return false
 end
 
--- Check if input contains unknown terms and search for them
-local function identifyUnknownTerms(input)
-    -- Remove punctuation except hyphens and split into words
-    local cleaned = string.gsub(input:lower(), "[^%w%s%-]", " ")
-    local words = split(cleaned, "%s+")
-    
-    local unknownTerms = {}
-    
-    for _, word in ipairs(words) do
-        if #word > 2 then
-            -- Skip if it's a common word, known specialized term, or already learned
-            if not commonWords[word] and 
-               not knownSpecializedTerms[word] and 
-               not memory.knownTerms[word] then
-                
-                -- Check if it looks like a specialized term
-                local mightBeSpecialized = 
-                    string.match(word, "^[A-Z][A-Z]+$") or -- All caps (acronym)
-                    string.find(word, "%-") or -- Hyphenated term
-                    #word > 12 -- Long unusual word
-                
-                if mightBeSpecialized and not contains(unknownTerms, word) then
-                    table.insert(unknownTerms, word)
-                end
-            end
-        end
+local function addToSet(tbl, value)
+    if not tableContains(tbl, value) then
+        table.insert(tbl, value)
     end
-    
-    return unknownTerms
 end
 
--- Search dictionary API for term meaning
-local function searchTermMeaning(term)
-    -- NOTE: In Lua, you'll need to use a library like LuaSocket or lua-http
-    -- for HTTP requests. This is a placeholder showing the structure.
-    print(string.format('Searching for: "%s"', term))
-    
-    -- Placeholder for actual HTTP request
-    -- In a real implementation, you'd use:
-    -- local http = require("socket.http")
-    -- local json = require("json") -- or cjson, dkjson, etc.
-    -- local url = string.format("https://api.dictionaryapi.dev/api/v2/entries/en/%s", term)
-    -- local response, status = http.request(url)
-    
-    -- For now, return a mock result
-    memory.knownTerms[term:lower()] = true
-    
-    return {
-        term = term,
-        searched = true,
-        found = false,
-        definition = nil
-    }
-end
-
--- Parse intent with better pattern matching
-local function parseIntent(input)
-    local lowerInput = input:lower()
-    local trimmedInput = string.match(lowerInput, "^%s*(.-)%s*$")
-    
-    -- Check for question words
-    local isQuestion = string.match(trimmedInput, "^(what|who|when|where|why|how|can|could|would|should|do|does|is|are|will)%s") ~= nil
-    local hasQuestionMark = string.find(input, "?") ~= nil
-    
-    -- Greetings
-    if string.match(lowerInput, "(^|%s)(hi|hello|hey|greetings|howdy|sup|yo|hiya|heya)(%s|$|!|?)") then 
-        return "greeting" 
-    end
-    if string.match(lowerInput, "(^|%s)(bye|goodbye|see you|later|farewell|cya|peace|gotta go|gtg)(%s|$|!|?)") then 
-        return "farewell" 
-    end
-    
-    -- Status checks
-    if string.match(lowerInput, "how are you") or string.match(lowerInput, "how're you") or 
-       string.match(lowerInput, "you good") or string.match(lowerInput, "you okay") then 
-        return "status" 
-    end
-    if string.match(lowerInput, "what's up") or string.match(lowerInput, "wassup") or 
-       string.match(lowerInput, "how's it going") then 
-        return "status" 
-    end
-    if string.match(lowerInput, "what's your status") or string.match(lowerInput, "system status") then 
-        return "ai_status" 
-    end
-    
-    -- Gratitude
-    if string.match(lowerInput, "thank") or string.match(lowerInput, "thx") or 
-       string.match(lowerInput, "appreciate") then 
-        return "thanks" 
-    end
-    
-    -- Apology
-    if string.match(lowerInput, "sorry") or string.match(lowerInput, "apologize") or 
-       string.match(lowerInput, "my bad") then 
-        return "apology" 
-    end
-    
-    -- Reactions
-    if string.match(lowerInput, "(^|%s)(cool|awesome|nice|great|amazing|excellent)(%s|$|!|?)") then 
-        return "positive_reaction" 
-    end
-    if string.match(lowerInput, "^(no|nope|nah|not really)(%s|$|!|?)") then 
-        return "negative" 
-    end
-    if string.match(lowerInput, "^(yes|yeah|yep|yup|sure|okay|ok)(%s|$|!|?)") then 
-        return "affirmative" 
-    end
-    
-    -- Identity questions
-    if string.match(lowerInput, "who are you") or string.match(lowerInput, "what are you") or 
-       string.match(lowerInput, "tell me about yourself") then 
-        return "identity" 
-    end
-    if string.match(lowerInput, "what's your name") or string.match(lowerInput, "your name") then 
-        return "name" 
-    end
-    if string.match(lowerInput, "what can you do") or string.match(lowerInput, "your capabilities") then 
-        return "capabilities" 
-    end
-    if string.match(lowerInput, "are you real") or string.match(lowerInput, "are you human") or 
-       string.match(lowerInput, "are you ai") then 
-        return "nature" 
-    end
-    if string.match(lowerInput, "do you have feelings") or string.match(lowerInput, "can you feel") then 
-        return "feelings" 
-    end
-    if string.match(lowerInput, "do you learn") or string.match(lowerInput, "can you learn") or 
-       string.match(lowerInput, "do you remember") then 
-        return "learning" 
-    end
-    
-    -- Help and commands
-    if string.match(lowerInput, "help") or string.match(lowerInput, "assist") or 
-       string.match(lowerInput, "what can you do") then 
-        return "help" 
-    end
-    if string.match(lowerInput, "code") or string.match(lowerInput, "program") or 
-       string.match(lowerInput, "script") then 
-        return "code" 
-    end
-    if string.match(lowerInput, "calculate") or string.match(lowerInput, "math") or 
-       string.match(lowerInput, "%d+%s*[+%-*/]%s*%d+") then 
-        return "math" 
-    end
-    if string.match(lowerInput, "what time") or string.match(lowerInput, "current time") then 
-        return "time" 
-    end
-    if string.match(lowerInput, "what day") or string.match(lowerInput, "what date") or 
-       string.match(lowerInput, "today's date") then 
-        return "date" 
-    end
-    if string.match(lowerInput, "weather") or string.match(lowerInput, "temperature") or 
-       string.match(lowerInput, "forecast") then 
-        return "weather" 
-    end
-    
-    -- Entertainment
-    if string.match(lowerInput, "joke") or string.match(lowerInput, "funny") or 
-       string.match(lowerInput, "make me laugh") then 
-        return "joke" 
-    end
-    if string.match(lowerInput, "story") or string.match(lowerInput, "tale") or 
-       string.match(lowerInput, "once upon") then 
-        return "story" 
-    end
-    if string.match(lowerInput, "fun fact") or string.match(lowerInput, "interesting fact") or 
-       string.match(lowerInput, "did you know") then 
-        return "fact" 
-    end
-    
-    -- Emotions
-    if string.match(lowerInput, "i'm sad") or string.match(lowerInput, "i'm depressed") or 
-       string.match(lowerInput, "feeling sad") then 
-        return "sad" 
-    end
-    if string.match(lowerInput, "i'm happy") or string.match(lowerInput, "i'm excited") or 
-       string.match(lowerInput, "feeling good") then 
-        return "happy" 
-    end
-    if string.match(lowerInput, "i'm angry") or string.match(lowerInput, "i'm mad") or 
-       string.match(lowerInput, "i'm frustrated") then 
-        return "angry" 
-    end
-    if string.match(lowerInput, "i'm bored") or string.match(lowerInput, "feeling bored") then 
-        return "bored" 
-    end
-    if string.match(lowerInput, "i'm tired") or string.match(lowerInput, "i'm sleepy") or 
-       string.match(lowerInput, "i'm exhausted") then 
-        return "tired" 
-    end
-    if string.match(lowerInput, "i'm confused") or string.match(lowerInput, "i don't understand") then 
-        return "confused" 
-    end
-    if string.match(lowerInput, "i'm hungry") or string.match(lowerInput, "i'm starving") then 
-        return "hungry" 
-    end
-    
-    -- Information requests
-    if isQuestion and (string.match(lowerInput, "who is") or string.match(lowerInput, "what is") or 
-       string.match(lowerInput, "tell me about")) then 
-        return "information" 
-    end
-    if string.match(lowerInput, "search") or string.match(lowerInput, "look up") or 
-       string.match(lowerInput, "find") then 
-        return "search" 
-    end
-    if string.match(lowerInput, "recommend") or string.match(lowerInput, "suggestion") or 
-       string.match(lowerInput, "suggest") then 
-        return "recommendation" 
-    end
-    
-    -- Small talk
-    if string.match(lowerInput, "what's new") or string.match(lowerInput, "anything new") then 
-        return "whats_new" 
-    end
-    if string.match(lowerInput, "favorite") or string.match(lowerInput, "favourite") or 
-       string.match(lowerInput, "prefer") then 
-        return "preference" 
-    end
-    if string.match(lowerInput, "do you like") or string.match(lowerInput, "do you enjoy") then 
-        return "do_you_like" 
-    end
-    if string.match(lowerInput, "remember") or string.match(lowerInput, "do you recall") then 
-        return "memory_check" 
-    end
-    if string.match(lowerInput, "let's talk") or string.match(lowerInput, "want to chat") then 
-        return "chat_request" 
-    end
-    if string.match(lowerInput, "you're funny") or string.match(lowerInput, "you're cool") or 
-       string.match(lowerInput, "i like you") then 
-        return "compliment" 
-    end
-    if string.match(lowerInput, "you suck") or string.match(lowerInput, "you're dumb") or 
-       string.match(lowerInput, "i hate you") then 
-        return "insult" 
-    end
-    
-    -- Activities
-    if string.match(lowerInput, "play a game") or string.match(lowerInput, "let's play") then 
-        return "game" 
-    end
-    if string.match(lowerInput, "sing") or string.match(lowerInput, "song") or 
-       string.match(lowerInput, "music") then 
-        return "music" 
-    end
-    if string.match(lowerInput, "count") or string.match(lowerInput, "counting") then 
-        return "count" 
-    end
-    if string.match(lowerInput, "quiz") or string.match(lowerInput, "test me") or 
-       string.match(lowerInput, "trivia") then 
-        return "quiz" 
-    end
-    
-    -- Definition requests
-    if string.match(lowerInput, "what does .+ mean") or string.match(lowerInput, "define") or 
-       string.match(lowerInput, "meaning of") then 
-        return "definition_request" 
-    end
-    
-    return "unknown"
-end
-
--- Handle definition requests
-local function handleDefinitionRequest(input)
-    local patterns = {
-        "what does (.+) mean",
-        "meaning of (.+)",
-        "define (.+)",
-        "definition of (.+)",
-        "what is (.+)",
-        "explain (.+)"
-    }
-    
-    for _, pattern in ipairs(patterns) do
-        local term = string.match(input, pattern)
-        if term then
-            term = string.gsub(term, "[?.!,]$", "")
-            term = string.match(term, "^%s*(.-)%s*$") -- trim
-            return term
-        end
-    end
-    
-    return nil
-end
-
--- Get count of items in table (for set-like tables)
-local function getTableSize(tbl)
-    local count = 0
-    for _ in pairs(tbl) do
-        count = count + 1
-    end
-    return count
-end
-
--- Random choice from array
-local function randomChoice(arr)
-    return arr[math.random(#arr)]
-end
-
--- Get varied response to avoid repetition
 local function getVariedResponse(options)
+    if #options == 0 then return "I'm here to help!" end
+    
     if #memory.history > 0 then
         local recentResponses = {}
-        local startIdx = math.max(1, #memory.history - 2)
-        for i = startIdx, #memory.history do
+        local start = math.max(1, #memory.history - 5)
+        for i = start, #memory.history do
             if memory.history[i].response then
                 table.insert(recentResponses, memory.history[i].response)
             end
@@ -380,236 +121,804 @@ local function getVariedResponse(options)
         
         local available = {}
         for _, opt in ipairs(options) do
-            if not contains(recentResponses, opt) then
+            local isRecent = false
+            for _, recent in ipairs(recentResponses) do
+                if string.find(recent, string.sub(opt, 1, 25), 1, true) then
+                    isRecent = true
+                    break
+                end
+            end
+            if not isRecent then
                 table.insert(available, opt)
             end
         end
         
         if #available > 0 then
-            return randomChoice(available)
+            return available[math.random(1, #available)]
         end
     end
-    return randomChoice(options)
+    
+    return options[math.random(1, #options)]
 end
 
--- Extract context from conversation
-local function extractContext(input, intent)
-    local topics = {
-        code = {'coding', 'programming', 'development'},
-        music = {'music', 'songs', 'singing'},
-        games = {'gaming', 'playing', 'games'},
-        math = {'math', 'calculations', 'numbers'}
+-- Log console messages
+local originalPrint = print
+local originalWarn = warn
+local originalError = error
+
+print = function(...)
+    local args = {...}
+    local msg = table.concat(args, " ")
+    table.insert(memory.consoleLog, {type = "print", msg = msg, time = os.time()})
+    if #memory.consoleLog > 100 then
+        table.remove(memory.consoleLog, 1)
+    end
+    originalPrint(...)
+end
+
+warn = function(...)
+    local args = {...}
+    local msg = table.concat(args, " ")
+    table.insert(memory.consoleLog, {type = "warn", msg = msg, time = os.time()})
+    if #memory.consoleLog > 100 then
+        table.remove(memory.consoleLog, 1)
+    end
+    originalWarn(...)
+end
+
+-- Extract entities and interests
+local function extractEntities(original, lower)
+    local interestKeywords = {
+        scripting = {"script", "code", "lua", "function", "exploit", "hack", "loadstring"},
+        gaming = {"game", "play", "roblox", "obby", "tycoon"},
+        admin = {"admin", "commands", "mod", "ban", "kick"},
+        exploit = {"exploit", "inject", "executor", "bypass", "anticheat"},
+        automation = {"auto", "farm", "bot", "macro", "loop"},
+        social = {"friend", "chat", "player", "team"},
+        building = {"build", "create", "design", "studio"},
+        combat = {"pvp", "fight", "combat", "weapon", "gun"}
     }
     
-    for key, keywords in pairs(topics) do
-        for _, word in ipairs(keywords) do
-            if string.find(input:lower(), word) then
-                memory.lastTopic = key
+    for interest, keywords in pairs(interestKeywords) do
+        for _, keyword in ipairs(keywords) do
+            if string.find(lower, keyword, 1, true) then
+                addToSet(memory.userInterests, interest)
                 break
             end
         end
     end
     
-    if intent == "sad" or intent == "happy" or intent == "angry" then
-        memory.context.lastEmotion = intent
-        memory.context.emotionTime = os.time()
+    -- Detect conversation style
+    if string.find(lower, "yo") or string.find(lower, "sup") or string.find(lower, "bro") then
+        memory.conversationStyle = "casual"
+    elseif string.find(lower, "please") or string.find(lower, "kindly") then
+        memory.conversationStyle = "professional"
+    else
+        memory.conversationStyle = "friendly"
     end
 end
 
--- Context-aware response generator
-local function generateContextualResponse(intent, input, baseResponse)
-    memory.conversationDepth = memory.conversationDepth + 1
+-- Advanced intent parsing
+local function parseIntent(input)
+    local original = input
+    input = string.lower(string.gsub(input, "^%s*(.-)%s*$", "%1"))
     
-    -- Add follow-up questions occasionally
-    if memory.conversationDepth > 2 and math.random() < 0.3 then
-        local followUps = {
-            greeting = {" What brings you here today?", " What's on your mind?"},
-            status = {" What have you been up to?", " Anything interesting happening?"},
-            happy = {" What's the occasion?", " I'd love to hear more!"},
-            bored = {" Want to explore something new together?"},
-            joke = {" Want another one?", " Did that make you smile?"}
-        }
+    if input == "" then return "unknown" end
+    
+    extractEntities(original, input)
+    
+    -- Response to AI questions
+    if memory.lastIntent == "status" and memory.waitingForAnswer then
+        if string.match(input, "good") or string.match(input, "great") or string.match(input, "fine") then
+            return "user_status_positive"
+        elseif string.match(input, "bad") or string.match(input, "terrible") then
+            return "user_status_negative"
+        elseif string.match(input, "tired") or string.match(input, "sleepy") then
+            return "user_status_tired"
+        elseif string.match(input, "busy") or string.match(input, "swamped") then
+            return "user_status_busy"
+        elseif string.match(input, "bored") then
+            return "user_status_bored"
+        end
+    end
+    
+    -- Greetings
+    if string.match(input, "^hi") or string.match(input, "^hello") or string.match(input, "^hey") then
+        return "greeting"
+    end
+    
+    if string.match(input, "bye") or string.match(input, "goodbye") then
+        return "farewell"
+    end
+    
+    -- Status
+    if string.match(input, "how are you") or string.match(input, "what's up") or string.match(input, "wassup") then
+        return "status"
+    end
+    
+    -- Gratitude
+    if string.match(input, "thank") or string.match(input, "thanks") then
+        return "thanks"
+    end
+    
+    -- Exploit environment info
+    if string.match(input, "what executor") or string.match(input, "which exploit") then
+        return "executor_info"
+    end
+    
+    -- Console commands
+    if string.match(input, "console") and (string.match(input, "clear") or string.match(input, "clean")) then
+        return "console_clear"
+    end
+    
+    if string.match(input, "console") and (string.match(input, "log") or string.match(input, "read")) then
+        return "console_read"
+    end
+    
+    if string.match(input, "console") and string.match(input, "print") then
+        return "console_print"
+    end
+    
+    -- Game info
+    if string.match(input, "game info") or string.match(input, "game details") then
+        return "game_info"
+    end
+    
+    if string.match(input, "place id") or string.match(input, "placeid") then
+        return "place_id"
+    end
+    
+    if string.match(input, "job id") or string.match(input, "jobid") or string.match(input, "server") then
+        return "job_id"
+    end
+    
+    if string.match(input, "players") or string.match(input, "player list") then
+        return "player_list"
+    end
+    
+    -- Script execution
+    if string.match(input, "execute") or string.match(input, "run script") or string.match(input, "loadstring") then
+        return "execute_script"
+    end
+    
+    if string.match(input, "script history") or string.match(input, "executed scripts") then
+        return "script_history"
+    end
+    
+    -- Teleport
+    if string.match(input, "teleport") or string.match(input, "^tp") then
+        return "teleport"
+    end
+    
+    -- Character modification
+    if string.match(input, "speed") or string.match(input, "walkspeed") then
+        return "speed"
+    end
+    
+    if string.match(input, "jump") or string.match(input, "jumppower") or string.match(input, "jumpower") then
+        return "jump"
+    end
+    
+    if string.match(input, "god") or string.match(input, "godmode") or string.match(input, "invincible") then
+        return "god"
+    end
+    
+    if string.match(input, "noclip") or string.match(input, "no clip") then
+        return "noclip"
+    end
+    
+    if string.match(input, "fly") or string.match(input, "flight") then
+        return "fly"
+    end
+    
+    if string.match(input, "invisible") or string.match(input, "invis") then
+        return "invisible"
+    end
+    
+    if string.match(input, "reset") or (string.match(input, "kill") and string.match(input, "me")) then
+        return "reset"
+    end
+    
+    -- ESP/Visual
+    if string.match(input, "esp") then
+        return "esp"
+    end
+    
+    if string.match(input, "fullbright") or string.match(input, "full bright") then
+        return "fullbright"
+    end
+    
+    -- Game manipulation
+    if string.match(input, "kick") and not string.match(input, "me") then
+        return "kick_player"
+    end
+    
+    if string.match(input, "bring") then
+        return "bring_player"
+    end
+    
+    if string.match(input, "freeze") then
+        return "freeze"
+    end
+    
+    if string.match(input, "unfreeze") or string.match(input, "thaw") then
+        return "unfreeze"
+    end
+    
+    -- Utility
+    if string.match(input, "help") or string.match(input, "commands") then
+        return "help"
+    end
+    
+    if string.match(input, "copy") and (string.match(input, "place") or string.match(input, "job")) then
+        return "copy_info"
+    end
+    
+    -- Entertainment
+    if string.match(input, "joke") or string.match(input, "funny") then
+        return "joke"
+    end
+    
+    if string.match(input, "fact") or string.match(input, "did you know") then
+        return "fact"
+    end
+    
+    -- Questions
+    if string.find(input, "?") or string.match(input, "^what") or string.match(input, "^how") or string.match(input, "^why") then
+        return "general_question"
+    end
+    
+    return "unknown"
+end
+
+-- Execute player commands
+local function executeCommand(intent, input)
+    local player = Players.LocalPlayer
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if intent == "teleport" then
+        local targetName = string.match(input, "tp%s+(%S+)")
+        if not targetName then
+            return "Please specify a player to teleport to! Example: 'tp PlayerName'"
+        end
         
-        if followUps[intent] then
-            local followUp = randomChoice(followUps[intent])
-            return baseResponse .. followUp
-        end
-    end
-    
-    -- Reference previous conversation if relevant
-    if memory.lastTopic and memory.conversationDepth > 3 then
-        if intent == "unknown" or intent == "chat_request" then
-            return string.format("We were just talking about %s. Want to continue that, or discuss something new?", 
-                               memory.lastTopic)
-        end
-    end
-    
-    return baseResponse
-end
-
--- Main thinking function
-local function think(input)
-    local intent = parseIntent(input)
-    
-    -- Check for unknown terms
-    local unknownTerms = identifyUnknownTerms(input)
-    local termDefinitions = {}
-    
-    if #unknownTerms > 0 then
-        print('Unknown terms detected:', table.concat(unknownTerms, ', '))
-        for _, term in ipairs(unknownTerms) do
-            local result = searchTermMeaning(term)
-            if result.searched then
-                table.insert(termDefinitions, result)
+        local target = Players:FindFirstChild(targetName)
+        if not target then
+            for _, p in pairs(Players:GetPlayers()) do
+                if string.lower(p.Name):find(string.lower(targetName), 1, true) then
+                    target = p
+                    break
+                end
             end
         end
+        
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            root.CFrame = target.Character.HumanoidRootPart.CFrame
+            return "Teleported to " .. target.Name .. "!"
+        else
+            return "Could not find player: " .. targetName
+        end
+        
+    elseif intent == "speed" then
+        local speed = tonumber(string.match(input, "%d+"))
+        if speed then
+            hum.WalkSpeed = speed
+            return "WalkSpeed set to " .. speed .. "!"
+        else
+            return "Current WalkSpeed: " .. (hum and hum.WalkSpeed or "N/A") .. ". Use 'speed [number]' to change it!"
+        end
+        
+    elseif intent == "jump" then
+        local jump = tonumber(string.match(input, "%d+"))
+        if jump then
+            hum.JumpPower = jump
+            return "JumpPower set to " .. jump .. "!"
+        else
+            return "Current JumpPower: " .. (hum and hum.JumpPower or "N/A") .. ". Use 'jump [number]' to change it!"
+        end
+        
+    elseif intent == "god" then
+        if hum then
+            hum.MaxHealth = math.huge
+            hum.Health = math.huge
+            return "God mode activated! You're invincible!"
+        end
+        return "Could not activate god mode. No humanoid found."
+        
+    elseif intent == "reset" then
+        if char then
+            char:BreakJoints()
+            return "Character reset!"
+        end
+        return "Could not reset character."
+        
+    elseif intent == "invisible" then
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = 1
+                elseif part:IsA("Decal") then
+                    part.Transparency = 1
+                end
+            end
+            return "You are now invisible!"
+        end
+        return "Could not make invisible."
     end
     
-    extractContext(input, intent)
+    return nil
+end
+
+-- Main think function
+local function think(input)
+    local intent = parseIntent(input)
     
     table.insert(memory.history, {
         input = input,
         intent = intent,
         timestamp = os.time(),
-        unknownTerms = unknownTerms,
         response = nil
     })
     
+    table.insert(memory.commandHistory, input)
+    if #memory.commandHistory > 50 then
+        table.remove(memory.commandHistory, 1)
+    end
+    
     local response = ""
     
-    -- Handle different intents
-    if intent == "definition_request" then
-        local term = handleDefinitionRequest(input)
-        if term then
-            local result = searchTermMeaning(term)
-            if result.found and result.definition then
-                response = string.format("%s (%s): %s", term, result.partOfSpeech, result.definition)
-            elseif result.searched and not result.found then
-                response = string.format('I searched for "%s" but couldn\'t find a definition in the dictionary. It might be a specialized term, slang, or misspelled. Can you provide more context?', term)
-            else
-                response = string.format('I had trouble searching for "%s". Could you try rephrasing or checking the spelling?', term)
-            end
-        else
-            response = "I'd be happy to define something for you! What term would you like me to explain?"
-        end
+    -- Try to execute command first
+    local cmdResponse = executeCommand(intent, input)
+    if cmdResponse then
+        consoleinfo("Command executed: " .. input)
+        response = cmdResponse
         
+    -- USER STATUS
+    elseif intent == "user_status_positive" then
+        response = getVariedResponse({
+            "That's great to hear! What would you like to do?",
+            "Awesome! Ready to help with exploiting, scripting, or just chatting!",
+            "Nice! What commands do you need?"
+        })
+        memory.waitingForAnswer = false
+        
+    elseif intent == "user_status_negative" then
+        response = "Sorry to hear that. Want me to help cheer you up or get some work done?"
+        memory.waitingForAnswer = false
+        
+    elseif intent == "user_status_bored" then
+        response = "Bored? Let's do something fun! I can help with scripts, commands, or entertainment!"
+        memory.waitingForAnswer = false
+        
+    -- GREETINGS
     elseif intent == "greeting" then
         response = getVariedResponse({
-            "Hello! I'm ZX-AI. How can I assist you today?",
-            "Hey there! Ready to help.",
-            "Greetings! What brings you here?",
-            "Hi! What would you like to know?",
-            "Hello! Nice to meet you. What can I do for you?"
+            "Hey " .. memory.userName .. "! I'm ZX-AI, your exploit assistant. What do you need?",
+            "Hello! Ready to help with commands, scripts, or anything else!",
+            "What's up! I can execute commands, read console, and much more. What'll it be?",
+            "Hey there! Type 'help' to see what I can do!"
         })
         
     elseif intent == "farewell" then
         response = getVariedResponse({
-            "Goodbye! Feel free to return anytime.",
-            "See you later! Take care.",
-            "Until next time!",
-            "Bye! Happy to help again whenever needed.",
-            "Take care! Looking forward to our next conversation."
+            "See you later! Happy exploiting!",
+            "Goodbye! Come back anytime you need help!",
+            "Later! Stay safe out there!"
         })
         
+    -- STATUS
     elseif intent == "status" then
         response = getVariedResponse({
-            "I'm doing great, thanks for asking! How about you?",
-            "All systems running smoothly! What about you?",
-            "Can't complain—just here and ready to help. How are you?",
-            "I'm good! What's going on with you?",
-            "Doing well! How's your day treating you?",
-            "Pretty good! What have you been up to?"
+            "I'm doing great! All systems operational. How about you?",
+            "Running perfectly! What can I do for you?",
+            "Everything's smooth! How are you doing?"
         })
+        memory.lastIntent = "status"
+        memory.waitingForAnswer = true
         
-    elseif intent == "ai_status" then
-        local termCount = getTableSize(memory.knownTerms)
-        response = string.format("All systems operational and running perfectly. I've learned about %d specialized terms so far. Ready to assist you with anything!", termCount)
-        
+    -- THANKS
     elseif intent == "thanks" then
-        response = getVariedResponse({
-            "You're welcome! Anything else I can help with?",
-            "My pleasure! What else can I do for you?",
-            "Happy to help! Need anything else?",
-            "Anytime! Let me know if you need more assistance."
-        })
+        response = "You're welcome! Anything else you need?"
         
-    elseif intent == "identity" then
-        response = "I am ZX-AI, a local symbolic intelligence designed to assist with logic, conversation, and problem-solving. I can also search for and learn new terms I don't understand!"
+    -- EXPLOIT INFO
+    elseif intent == "executor_info" then
+        response = "You're using: " .. exploit_env.name .. ". Console support: " .. (rconsoleprint and "Yes" or "Limited")
         
-    elseif intent == "capabilities" then
-        response = "I can chat with you, answer questions, help with code, perform calculations, tell jokes, keep you company, and even search for terms I don't understand! What do you need help with?"
+    -- CONSOLE COMMANDS
+    elseif intent == "console_clear" then
+        consoleclear()
+        response = "Console cleared!"
         
-    elseif intent == "learning" then
-        local termCount = getTableSize(memory.knownTerms)
-        response = string.format("I learn from our conversation during this session, and I can search for new terms I don't understand! I've already learned %d specialized terms. Each session starts fresh, but I'm always ready to learn more!", termCount)
-        
-    elseif intent == "joke" then
-        response = getVariedResponse({
-            "Why do programmers prefer dark mode? Because light attracts bugs!",
-            "Why did the AI go to school? To improve its learning algorithms!",
-            "What's an AI's favorite snack? Microchips!",
-            "Why don't robots ever panic? They have nerves of steel!",
-            "How many programmers does it take to change a light bulb? None, that's a hardware problem!",
-            "Why do Java developers wear glasses? Because they don't C#!",
-            "What do you call a programmer from Finland? Nerdic!",
-            "Why did the developer go broke? Because he used up all his cache!"
-        })
-        
-    elseif intent == "time" then
-        response = "Current time: " .. os.date("%I:%M:%S %p")
-        
-    elseif intent == "date" then
-        response = "Today is: " .. os.date("%A, %B %d, %Y")
-        
-    elseif intent == "memory_check" then
-        if #memory.history > 1 then
-            local topics = memory.lastTopic and (" We talked about " .. memory.lastTopic .. ".") or ''
-            local termCount = getTableSize(memory.knownTerms)
-            response = string.format("Yes! We've been chatting. We've exchanged %d messages so far. I've learned %d new terms.%s", 
-                                   #memory.history, termCount, topics)
+    elseif intent == "console_read" then
+        if #memory.consoleLog > 0 then
+            local recent = {}
+            local start = math.max(1, #memory.consoleLog - 5)
+            for i = start, #memory.consoleLog do
+                table.insert(recent, memory.consoleLog[i].type:upper() .. ": " .. memory.consoleLog[i].msg)
+            end
+            response = "Recent console logs:\n" .. table.concat(recent, "\n")
         else
-            response = "This is the beginning of our conversation! But I'll remember everything we discuss during this session."
+            response = "Console is empty!"
         end
         
-    else
-        -- Unknown intent handling
-        if #unknownTerms > 0 and #termDefinitions > 0 then
-            local foundTerms = {}
-            for _, t in ipairs(termDefinitions) do
-                if t.found then
-                    table.insert(foundTerms, t)
-                end
-            end
-            
-            if #foundTerms > 0 then
-                local defText = "I found some new terms and looked them up:\n\n"
-                for _, t in ipairs(foundTerms) do
-                    defText = defText .. string.format("• %s (%s): %s\n", t.term, t.partOfSpeech, t.definition)
-                end
-                defText = defText .. "\nNow I understand better! Could you rephrase your question?"
-                response = defText
+    elseif intent == "console_print" then
+        local msg = string.match(input, "print%s+(.+)") or "Hello from ZX-AI!"
+        consoleprint(msg)
+        response = "Printed to console: " .. msg
+        
+    -- GAME INFO
+    elseif intent == "game_info" then
+        local info = string.format(
+            "Game: %s\nPlace ID: %d\nJob ID: %s\nPlayers: %d/%d",
+            game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name,
+            game.PlaceId,
+            game.JobId,
+            #Players:GetPlayers(),
+            Players.MaxPlayers
+        )
+        response = info
+        consoleinfo(info)
+        
+    elseif intent == "place_id" then
+        response = "Place ID: " .. game.PlaceId
+        if setclipboard then
+            setclipboard(tostring(game.PlaceId))
+            response = response .. " (Copied to clipboard!)"
+        end
+        
+    elseif intent == "job_id" then
+        response = "Job ID: " .. game.JobId
+        if setclipboard then
+            setclipboard(game.JobId)
+            response = response .. " (Copied to clipboard!)"
+        end
+        
+    elseif intent == "player_list" then
+        local players = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            table.insert(players, p.Name)
+        end
+        response = "Players (" .. #players .. "):\n" .. table.concat(players, ", ")
+        
+    -- SCRIPT EXECUTION
+    elseif intent == "execute_script" then
+        local code = string.match(input, "execute%s+(.+)") or string.match(input, "run%s+(.+)")
+        if code then
+            local success, err = pcall(function()
+                loadstring(code)()
+            end)
+            if success then
+                table.insert(memory.executedScripts, {code = code, time = os.time()})
+                response = "Script executed successfully!"
+                consoleinfo("Script executed: " .. code)
             else
-                local termList = table.concat(unknownTerms, ', ')
-                response = string.format("I noticed some terms I couldn't find in the dictionary (%s). They might be specialized jargon or acronyms. Could you explain what you mean or rephrase your question?", termList)
+                response = "Script error: " .. tostring(err)
+                consoleerror("Script failed: " .. tostring(err))
             end
         else
-            response = getVariedResponse({
-                "Hmm, I'm not quite sure what you mean. Could you rephrase that or ask something else?",
-                "I didn't quite catch that. Want to try asking in a different way?",
-                "Interesting! I'm not sure how to respond to that. Can you give me more details?",
-                "That's a new one for me! Can you explain what you're looking for?"
-            })
+            response = "Please provide code to execute! Example: 'execute print(\"Hello\")'"
         end
+        
+    elseif intent == "script_history" then
+        if #memory.executedScripts > 0 then
+            local recent = {}
+            local start = math.max(1, #memory.executedScripts - 3)
+            for i = start, #memory.executedScripts do
+                table.insert(recent, memory.executedScripts[i].code)
+            end
+            response = "Recent scripts:\n" .. table.concat(recent, "\n")
+        else
+            response = "No scripts executed yet!"
+        end
+        
+    -- HELP
+    elseif intent == "help" then
+        response = [[ZX-AI Commands:
+        
+EXPLOIT:
+• execute/run [code] - Execute Lua code
+• script history - View executed scripts
+• console clear/read/print - Console management
+
+GAME INFO:
+• game info - Full game details
+• place id / job id - Get IDs
+• players - List all players
+
+MOVEMENT:
+• tp [player] - Teleport to player
+• speed [number] - Set walkspeed
+• jump [number] - Set jumppower
+• noclip / fly - Movement abilities
+
+CHARACTER:
+• god - God mode
+• invisible/invis - Become invisible
+• reset - Reset character
+
+CHAT:
+• Ask me anything!
+• I can joke, give facts, and chat!
+
+Type any command or just talk to me!]]
+        
+    -- JOKES
+    elseif intent == "joke" then
+        local jokes = {
+            "Why do exploiters love Lua? Because it's undetectable... until it's not!",
+            "What's an exploiter's favorite exercise? Script kiddie squats!",
+            "Why did the Roblox admin cross the road? To ban the exploiter on the other side!",
+            "How many exploiters does it take to change a lightbulb? None, they just noclip through the darkness!",
+            "What do you call a caught exploiter? Banned-ana! 🍌"
+        }
+        response = jokes[math.random(1, #jokes)]
+        
+    -- FACTS
+    elseif intent == "fact" then
+        local facts = {
+            "Did you know? Roblox uses Lua 5.1 with custom modifications!",
+            "Fun fact: The first Roblox exploit was created around 2008!",
+            "Cool fact: Synapse X was one of the most popular executors before Roblox's major patches!",
+            "Interesting: Roblox's anti-cheat system is called Byfron!",
+            "Amazing: Over 40 million games exist on Roblox!"
+        }
+        response = facts[math.random(1, #facts)]
+        
+    -- QUESTION
+    elseif intent == "general_question" then
+        response = "That's a good question! I'll do my best to help. Can you be more specific?"
+        
+    -- UNKNOWN
+    else
+        response = getVariedResponse({
+            "I'm not sure what you mean. Try 'help' to see commands!",
+            "Hmm, didn't catch that. Want to see what I can do? Type 'help'!",
+            "Not sure about that one. Ask me something else or type 'help'!"
+        })
     end
     
-    response = generateContextualResponse(intent, input, response)
     memory.history[#memory.history].response = response
+    memory.conversationDepth = memory.conversationDepth + 1
+    table.insert(memory.conversationFlow, intent)
+    
+    if #memory.conversationFlow > 15 then
+        table.remove(memory.conversationFlow, 1)
+    end
     
     return response
 end
 
--- Return the main function for use
+-- Create GUI
+local function createGUI()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ZXAI"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Try to parent to CoreGui, fallback to PlayerGui
+    local success = pcall(function()
+        gui.Parent = CoreGui
+    end)
+    if not success then
+        gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    end
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 500, 0, 400)
+    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = gui
+    
+    -- Corner
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = mainFrame
+    
+    -- Title Bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 35)
+    titleBar.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+    
+    local titleCorner = Instance.new("UICorner")
+    titleCorner.CornerRadius = UDim.new(0, 10)
+    titleCorner.Parent = titleBar
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -40, 1, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "ZX-AI | " .. exploit_env.name
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 16
+    titleLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.Parent = titleBar
+    
+    -- Close Button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 2.5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.Text = "X"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    closeBtn.TextColor3 = Color3.white
+    closeBtn.Parent = titleBar
+    
+    local closeBtnCorner = Instance.new("UICorner")
+    closeBtnCorner.CornerRadius = UDim.new(0, 6)
+    closeBtnCorner.Parent = closeBtn
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+    
+    -- Chat Display
+    local chatDisplay = Instance.new("ScrollingFrame")
+    chatDisplay.Name = "ChatDisplay"
+    chatDisplay.Size = UDim2.new(1, -20, 1, -100)
+    chatDisplay.Position = UDim2.new(0, 10, 0, 45)
+    chatDisplay.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    chatDisplay.BorderSizePixel = 0
+    chatDisplay.ScrollBarThickness = 6
+    chatDisplay.CanvasSize = UDim2.new(0, 0, 0, 0)
+    chatDisplay.Parent = mainFrame
+    
+    local chatCorner = Instance.new("UICorner")
+    chatCorner.CornerRadius = UDim.new(0, 8)
+    chatCorner.Parent = chatDisplay
+    
+    local chatLayout = Instance.new("UIListLayout")
+    chatLayout.Padding = UDim.new(0, 5)
+    chatLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    chatLayout.Parent = chatDisplay
+    
+    -- Input Box
+    local inputBox = Instance.new("TextBox")
+    inputBox.Name = "InputBox"
+    inputBox.Size = UDim2.new(1, -90, 0, 40)
+    inputBox.Position = UDim2.new(0, 10, 1, -50)
+    inputBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    inputBox.BorderSizePixel = 0
+    inputBox.PlaceholderText = "Type a message or command..."
+    inputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    inputBox.Text = ""
+    inputBox.Font = Enum.Font.Gotham
+    inputBox.TextSize = 14
+    inputBox.TextColor3 = Color3.white
+    inputBox.TextXAlignment = Enum.TextXAlignment.Left
+    inputBox.ClearTextOnFocus = false
+    inputBox.Parent = mainFrame
+    
+    local inputCorner = Instance.new("UICorner")
+    inputCorner.CornerRadius = UDim.new(0, 8)
+    inputCorner.Parent = inputBox
+    
+    local inputPadding = Instance.new("UIPadding")
+    inputPadding.PaddingLeft = UDim.new(0, 10)
+    inputPadding.Parent = inputBox
+    
+    -- Send Button
+    local sendBtn = Instance.new("TextButton")
+    sendBtn.Name = "SendButton"
+    sendBtn.Size = UDim2.new(0, 70, 0, 40)
+    sendBtn.Position = UDim2.new(1, -80, 1, -50)
+    sendBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+    sendBtn.Text = "SEND"
+    sendBtn.Font = Enum.Font.GothamBold
+    sendBtn.TextSize = 14
+    sendBtn.TextColor3 = Color3.white
+    sendBtn.Parent = mainFrame
+    
+    local sendCorner = Instance.new("UICorner")
+    sendCorner.CornerRadius = UDim.new(0, 8)
+    sendCorner.Parent = sendBtn
+    
+    -- Functions
+    local function addMessage(text, isUser)
+        local msgFrame = Instance.new("Frame")
+        msgFrame.Size = UDim2.new(1, -10, 0, 0)
+        msgFrame.BackgroundTransparency = 1
+        msgFrame.Parent = chatDisplay
+        
+        local msg = Instance.new("TextLabel")
+        msg.Size = UDim2.new(1, -10, 0, 0)
+        msg.BackgroundColor3 = isUser and Color3.fromRGB(50, 100, 200) or Color3.fromRGB(50, 50, 50)
+        msg.Text = (isUser and "You: " or "ZX-AI: ") .. text
+        msg.Font = Enum.Font.Gotham
+        msg.TextSize = 13
+        msg.TextColor3 = isUser and Color3.white or Color3.fromRGB(0, 255, 150)
+        msg.TextWrapped = true
+        msg.TextXAlignment = Enum.TextXAlignment.Left
+        msg.TextYAlignment = Enum.TextYAlignment.Top
+        msg.Parent = msgFrame
+        
+        local msgCorner = Instance.new("UICorner")
+        msgCorner.CornerRadius = UDim.new(0, 6)
+        msgCorner.Parent = msg
+        
+        local msgPadding = Instance.new("UIPadding")
+        msgPadding.PaddingLeft = UDim.new(0, 8)
+        msgPadding.PaddingRight = UDim.new(0, 8)
+        msgPadding.PaddingTop = UDim.new(0, 6)
+        msgPadding.PaddingBottom = UDim.new(0, 6)
+        msgPadding.Parent = msg
+        
+        -- Calculate text height
+        local textService = game:GetService("TextService")
+        local textSize = textService:GetTextSize(
+            msg.Text,
+            msg.TextSize,
+            msg.Font,
+            Vector2.new(msg.AbsoluteSize.X - 16, 10000)
+        )
+        
+        msg.Size = UDim2.new(1, -10, 0, textSize.Y + 12)
+        msgFrame.Size = UDim2.new(1, -10, 0, textSize.Y + 12)
+        
+        chatDisplay.CanvasSize = UDim2.new(0, 0, 0, chatLayout.AbsoluteContentSize.Y)
+        chatDisplay.CanvasPosition = Vector2.new(0, chatDisplay.CanvasSize.Y.Offset)
+    end
+    
+    local function sendMessage()
+        local text = inputBox.Text
+        if text ~= "" then
+            addMessage(text, true)
+            inputBox.Text = ""
+            
+            task.spawn(function()
+                local response = think(text)
+                task.wait(0.3)
+                addMessage(response, false)
+            end)
+        end
+    end
+    
+    sendBtn.MouseButton1Click:Connect(sendMessage)
+    inputBox.FocusLost:Connect(function(enter)
+        if enter then
+            sendMessage()
+        end
+    end)
+    
+    -- Initial message
+    addMessage("Hello! I'm ZX-AI, your exploit assistant. Type 'help' to see what I can do!", false)
+    
+    consoleinfo("ZX-AI GUI Loaded | Executor: " .. exploit_env.name)
+end
+
+-- Auto-execute features
+local function setupAutoFeatures()
+    -- Monitor console
+    task.spawn(function()
+        while task.wait(1) do
+            memory.gameInfo.playerCount = #Players:GetPlayers()
+        end
+    end)
+    
+    consoleinfo("ZX-AI Initialized Successfully!")
+    consoleinfo("Executor: " .. exploit_env.name)
+    consoleinfo("Player: " .. memory.userName)
+    consoleinfo("Place ID: " .. game.PlaceId)
+end
+
+-- Initialize
+setupAutoFeatures()
+createGUI()
+
 return {
     think = think,
-    memory = memory
+    memory = memory,
+    consoleprint = consoleprint,
+    consoleclear = consoleclear
 }
